@@ -6,6 +6,14 @@ MP4 영상의 원하는 구간만 **무손실로** 빠르게 잘라내는 심플
 
 ![screenshot](screenshot.png)
 
+## 🌐 웹에서 바로 사용
+
+**https://samcheonghaus.github.io/mp4-cutter/**
+
+설치 없이 브라우저(Chrome·Edge 권장)에서 바로 사용할 수 있습니다.
+영상은 인터넷에 올라가지 않고 내 컴퓨터 브라우저 안에서만 처리됩니다.
+(처음 저장할 때 처리 엔진 약 31MB를 한 번 내려받습니다)
+
 ## 사용법
 
 **영상 끝 자르기** (가장 많이 쓰는 경우)
@@ -42,7 +50,7 @@ exe 아이콘 위에 영상 파일을 끌어다 놓으면 바로 열립니다.
 | X | 잘라내기 |
 | Ctrl+O / Ctrl+S | 열기 / 저장 |
 
-## 다운로드 (Windows)
+## 💻 Windows 프로그램 다운로드
 
 [Releases](../../releases) 에서 `MP4Cutter.exe` 를 받아 실행하면 됩니다. (ffmpeg 포함, 설치 불필요)
 
