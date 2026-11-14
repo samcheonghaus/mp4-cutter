@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MP4 Cutter - 무손실 영상 자르기</title>
+<meta name="description" content="설치 없이 브라우저에서 MP4 영상을 무손실로 자르는 도구. 영상은 서버로 전송되지 않습니다.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>">
+<style>
+  :root {
+    --bg: #1e1f22; --panel: #2b2d31; --deep: #16171a; --line: #3a3d43;
+    --fg: #e6e6e6; --muted: #9aa0a6; --accent: #4c8dff; --keep: #2f9e63;
+    --cut: #e5484d; --sel: #ffb020;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; font-size: 14px; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 14px 14px 30px; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  button { font: inherit; color: var(--fg); background: var(--line); border: 0; border-radius: 6px;
+    padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+  button:hover:not(:disabled) { background: #4a4e55; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.cut { background: var(--cut); color: #fff; font-weight: bold; }
+  button.cut:hover:not(:disabled) { background: #f06b6f; }
+  button.save { background: var(--accent); color: #fff; font-weight: bold; padding: 10px 22px; font-size: 15px; }
+  button.save:hover:not(:disabled) { background: #6aa1ff; }
+  .file-info { color: var(--muted); font-size: 13px; }
+
+  #drop { border: 2px dashed #4a4e55; border-radius: 10px; padding: 50px 20px; text-align: center;
+    color: var(--muted); cursor: pointer; background: var(--deep); }
+  #drop.over { border-color: var(--accent); color: var(--fg); }
+  #drop b { color: var(--fg); font-size: 17px; display: block; margin-bottom: 8px; }
+
+  #editor { display: none; }
+  video { width: 100%; max-height: 56vh; background: #000; display: block; border-radius: 6px; }
+
+  #tl { position: relative; height: 46px; margin-top: 10px; background: var(--deep); border-radius: 6px;
+    cursor: pointer; user-select: none; touch-action: none; }
+  #tl .bar { position: absolute; left: 10px; right: 10px; top: 16px; height: 12px; background: var(--keep); border-radius: 2px; overflow: hidden; }
+  #tl .seg { position: absolute; top: 0; bottom: 0; background: var(--cut); }
+  #tl .pend { position: absolute; top: 13px; height: 18px; border: 2px solid var(--sel);
+    background: repeating-linear-gradient(45deg, rgba(255,176,32,.55) 0 4px, rgba(255,176,32,.2) 4px 8px); border-radius: 2px; }
+  #tl .head { position: absolute; top: 3px; bottom: 12px; width: 2px; background: var(--accent); margin-left: -1px; }
+  #tl .head::before { content: ""; position: absolute; left: -6px; top: -3px; border: 7px solid transparent; border-top-color: var(--accent); }
+  #tl .ticks { position: absolute; left: 10px; right: 10px; bottom: 1px; height: 11px; font: 9px Consolas, monospace; color: #777; }
+  #tl .ticks span { position: absolute; transform: translateX(-50%); }
+  #tl .ticks span:first-child { transform: none; }
+  #tl .ticks span:last-child { transform: translateX(-100%); }
+
+  .nav { display: flex; align-items: center; gap: 4px; margin: 8px 0; flex-wrap: wrap; }
+  .time { font: bold 17px Consolas, "Courier New", monospace; margin-right: auto; }
+  .nav button { padding: 6px 9px; }
+
+  .panel { background: var(--panel); border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .label-cut { color: var(--cut); font-weight: bold; margin-right: 4px; }
+  input.t { width: 118px; background: var(--deep); color: var(--fg); border: 1px solid #555; border-radius: 4px;
+    padding: 6px; font: 13px Consolas, monospace; }
+  .spacer { flex: 1; }
+  #list { list-style: none; margin: 10px 0 0; padding: 6px; background: var(--deep); border-radius: 6px; min-height: 64px;
+    font: 13px Consolas, monospace; }
+  #list li { display: flex; align-items: center; gap: 8px; padding: 3px 4px; }
+  #list li .x { margin-left: auto; padding: 2px 8px; font-size: 12px; }
+  #list li.empty { color: #666; font-family: inherit; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+  .opts label { display: block; margin: 3px 0; cursor: pointer; }
+  .opts b { display: inline-block; width: 44px; }
+
+  .bottom { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+  progress { flex: 1; height: 14px; accent-color: var(--accent); }
+  #status { color: var(--muted); font-size: 13px; margin-top: 8px; min-height: 18px; }
+  #result { display: none; margin-top: 10px; background: #1f3b2c; border: 1px solid var(--keep); border-radius: 8px; padding: 12px; }
+  #result a { color: #7fe0a8; font-weight: bold; }
+  .keys { color: #777; font-size: 12px; margin-top: 14px; line-height: 1.7; }
+  kbd { background: var(--line); border-radius: 3px; padding: 0 5px; font: 11px Consolas, monospace; color: var(--fg); }
+  .privacy { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  @media (max-width: 640px) {
+    .time { width: 100%; }
+    input.t { width: 100px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>✂️ MP4 Cutter</h1>
+    <button id="btnOpen">📂 영상 열기</button>
+    <span class="file-info" id="fileInfo">설치 없이 브라우저에서 영상 자르기</span>
+  </header>
+
+  <div id="drop">
+    <b>여기에 영상 파일을 끌어다 놓거나 클릭하세요</b>
+    MP4 · MOV · M4V · MKV · WEBM<br><br>
+    <span class="privacy">🔒 영상은 인터넷에 올라가지 않고 이 컴퓨터(브라우저) 안에서만 처리됩니다.</span>
+  </div>
+  <input type="file" id="fileInput" accept="video/*,.mp4,.mov,.m4v,.mkv,.webm,.ts" hidden>
+
+  <div id="editor">
+    <video id="video" controls playsinline preload="auto"></video>
+
+    <div id="tl">
+      <div class="bar" id="bar"></div>
+      <div class="pend" id="pend" hidden></div>
+      <div class="head" id="head"></div>
+      <div class="ticks" id="ticks"></div>
+    </div>
+
+    <div class="nav">
+      <span class="time" id="time">00:00:00.000 / 00:00:00.000</span>
+      <button data-step="-10">-10초</button>
+      <button data-step="-1">-1초</button>
+      <button data-step="-f">-1프레임</button>
+      <button id="btnPlay">▶ 재생</button>
+      <button data-step="f">+1프레임</button>
+      <button data-step="1">+1초</button>
+      <button data-step="10">+10초</button>
+    </div>
+
+    <div class="panel">
+      <div class="row">
+        <span class="label-cut">버릴 구간</span>
+        <button id="btnIn">① 여기부터 버리기 (S)</button>
+        <input class="t" id="entIn" placeholder="--:--:--.---">
+        <button id="btnOut">② 여기까지 버리기 (E)</button>
+        <input class="t" id="entOut" placeholder="--:--:--.---">
+        <span class="spacer"></span>
+        <button class="cut" id="btnCut">✂ 잘라내기 (X)</button>
+      </div>
+      <ul id="list"></ul>
+      <div class="row" style="margin-top:6px">
+        <span class="hint" id="hint"></span>
+        <span class="spacer"></span>
+        <button id="btnClear">전체 되돌리기</button>
+      </div>
+    </div>
+
+    <div class="panel opts">
+      <label><b>방식</b><input type="radio" name="mode" value="copy" checked> 빠르게 (화질·용량 원본 그대로, 자른 위치가 1초 정도 어긋날 수 있음)</label>
+      <label><b></b><input type="radio" name="mode" value="precise"> 정확하게 (프레임 단위로 정확, 브라우저에서 다시 인코딩하므로 많이 느림)</label>
+    </div>
+
+    <div class="bottom">
+      <progress id="prog" max="1000" value="0"></progress>
+      <button id="btnCancel" hidden>취소</button>
+      <button class="save" id="btnSave">💾 저장하기</button>
+    </div>
+    <div id="status"></div>
+    <div id="result"></div>
+
+    <div class="keys">
+      단축키: <kbd>Space</kbd> 재생/정지 · <kbd>←</kbd><kbd>→</kbd> 1초 · <kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd> 1프레임 ·
+      <kbd>PgUp</kbd><kbd>PgDn</kbd> 10초 · <kbd>S</kbd> 여기부터 버리기 · <kbd>E</kbd> 여기까지 버리기 · <kbd>X</kbd> 잘라내기<br>
+      영상 끝 자르기: 버릴 장면으로 이동 → <b>① 여기부터 버리기</b> → <b>저장하기</b>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { FFmpeg } from "./index.js";
+
+// ffmpeg 엔진(약 31MB). ?core=주소 로 바꿀 수 있음 (테스트용)
+const CORE_BASE = new URLSearchParams(location.search).get("core")
+  || "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
+
+const $ = (id) => document.getElementById(id);
+const video = $("video");
+const S = { file: null, dur: 0, cuts: [], inT: null, outT: null, busy: false, url: null, outUrl: null };
+let ff = null, ffLoading = null;
+
+// ---------- time utils ----------
+const fmt = (sec) => {
+  sec = Math.max(0, sec || 0);
+  let ms = Math.round(sec * 1000);
+  const h = Math.floor(ms / 3600000); ms -= h * 3600000;
+  const m = Math.floor(ms / 60000); ms -= m * 60000;
+  const s = Math.floor(ms / 1000); ms -= s * 1000;
+  const p = (n, w = 2) => String(n).padStart(w, "0");
+  return `${p(h)}:${p(m)}:${p(s)}.${p(ms, 3)}`;
+};
+const parseT = (txt) => {
+  txt = txt.trim().replace(",", ".");
+  if (!txt) return null;
+  const parts = txt.split(":");
+  if (parts.length > 3 || parts.some((x) => x === "" || isNaN(x))) return NaN;
+  return parts.reduce((a, x) => a * 60 + parseFloat(x), 0);
+};
+const mb = (b) => (b / 1048576).toLocaleString(undefined, { maximumFractionDigits: 1 }) + " MB";
+
+// ---------- open file ----------
+$("btnOpen").onclick = () => $("fileInput").click();
+$("drop").onclick = () => $("fileInput").click();
+$("fileInput").onchange = (e) => e.target.files[0] && openFile(e.target.files[0]);
+for (const el of [document.body]) {
+  el.addEventListener("dragover", (e) => { e.preventDefault(); $("drop").classList.add("over"); });
+  el.addEventListener("dragleave", () => $("drop").classList.remove("over"));
+  el.addEventListener("drop", (e) => {
+    e.preventDefault(); $("drop").classList.remove("over");
+    const f = e.dataTransfer.files[0]; if (f) openFile(f);
+  });
+}
+
+function openFile(file) {
+  if (S.busy) return;
+  S.file = file; S.cuts = []; S.inT = S.outT = null; S.dur = 0;
+  if (S.url) URL.revokeObjectURL(S.url);
+  S.url = URL.createObjectURL(file);
+  video.src = S.url;
+  $("fileInfo").textContent = `${file.name}  (${mb(file.size)})`;
+  document.title = `MP4 Cutter - ${file.name}`;
+  $("drop").style.display = "none";
+  $("editor").style.display = "block";
+  $("result").style.display = "none";
+  $("status").textContent = "";
+  $("prog").value = 0;
+  refresh();
+  loadFFmpeg().catch(() => {}); // 미리 엔진 받아두기
+}
+video.addEventListener("loadedmetadata", () => {
+  S.dur = video.duration || 0;
+  drawTicks(); refresh();
+});
+video.addEventListener("error", () => {
+  $("status").textContent = "⚠ 이 브라우저에서 미리보기를 재생할 수 없는 형식입니다. (HEVC 등) Chrome/Edge 최신 버전을 사용해 보세요.";
+});
+video.addEventListener("timeupdate", drawHead);
+video.addEventListener("seeked", drawHead);
+video.addEventListener("play", () => $("btnPlay").textContent = "⏸ 정지");
+video.addEventListener("pause", () => $("btnPlay").textContent = "▶ 재생");
+
+// ---------- navigation ----------
+const pos = () => video.currentTime || 0;
+function seek(t) { if (!S.dur) return; video.currentTime = Math.max(0, Math.min(t, S.dur)); drawHead(); }
+function step(d) {
+  if (d === "f" || d === "-f") { video.pause(); d = (d === "f" ? 1 : -1) / 30; }
+  seek(pos() + Number(d));
+}
+document.querySelectorAll("[data-step]").forEach((b) => b.onclick = () => step(b.dataset.step));
+$("btnPlay").onclick = () => video.paused ? video.play() : video.pause();
+
+const tl = $("tl");
+function tlSeek(e) {
+  const r = $("bar").getBoundingClientRect();
+  seek(((e.clientX - r.left) / r.width) * S.dur);
+}
+tl.addEventListener("pointerdown", (e) => { tl.setPointerCapture(e.pointerId); tlSeek(e); });
+tl.addEventListener("pointermove", (e) => { if (e.buttons) tlSeek(e); });
+
+// ---------- timeline drawing ----------
+const pct = (t) => (S.dur ? (t / S.dur) * 100 : 0);
+function drawTicks() {
+  const n = 8, el = $("ticks"); el.innerHTML = "";
+  for (let i = 0; i <= n; i++) {
+    const s = document.createElement("span");
+    s.style.left = (i / n) * 100 + "%";
+    s.textContent = fmt((S.dur * i) / n).slice(0, 8);
+    el.appendChild(s);
+  }
+}
+function drawHead() {
+  const r = $("bar");
+  $("head").style.left = `calc(10px + ${pct(pos())} * (100% - 20px) / 100)`;
+  $("time").textContent = `${fmt(pos())} / ${fmt(S.dur)}`;
+}
+function drawTimeline() {
+  const bar = $("bar");
+  bar.querySelectorAll(".seg").forEach((x) => x.remove());
+  for (const [s, e] of S.cuts) {
+    const d = document.createElement("div");
+    d.className = "seg"; d.style.left = pct(s) + "%"; d.style.width = pct(e - s) + "%";
+    bar.appendChild(d);
+  }
+  const p = $("pend");
+  if (pending()) {
+    p.hidden = false;
+    p.style.left = `calc(10px + ${pct(S.inT)} * (100% - 20px) / 100)`;
+    p.style.width = `calc(${pct(S.outT - S.inT)} * (100% - 20px) / 100)`;
+  } else p.hidden = true;
+  drawHead();
+}
+
+// ---------- cut logic ----------
+const pending = () => S.inT != null && S.outT != null && S.outT - S.inT >= 0.05;
+const allCuts = () => pending() ? [...S.cuts, [S.inT, S.outT]] : [...S.cuts];
+function kept() {
+  const cuts = allCuts().sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [s, e] of cuts) {
+    if (merged.length && s <= merged[merged.length - 1][1]) merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+    else merged.push([s, e]);
+  }
+  const out = []; let t = 0;
+  for (const [s, e] of merged) { if (s - t >= 0.05) out.push([t, s]); t = Math.max(t, e); }
+  if (S.dur - t >= 0.05) out.push([t, S.dur]);
+  return out;
+}
+
+function setIn() {
+  if (!S.dur) return;
+  S.inT = pos();
+  if (S.outT == null || S.outT <= S.inT) S.outT = S.dur;
+  refresh();
+}
+function setOut() {
+  if (!S.dur) return;
+  S.outT = pos();
+  if (S.inT == null || S.inT >= S.outT) S.inT = 0;
+  refresh();
+}
+function addCut() {
+  if (!S.dur) return;
+  if (!pending()) { alert("먼저 [① 여기부터 버리기] 또는 [② 여기까지 버리기]로 버릴 부분을 선택하세요."); return; }
+  S.cuts.push([S.inT, S.outT]); S.cuts.sort((a, b) => a[0] - b[0]);
+  S.inT = S.outT = null;
+  refresh();
+}
+function entrySet(which) {
+  const el = which === "in" ? $("entIn") : $("entOut");
+  const v = parseT(el.value);
+  if (v === null) return;
+  if (isNaN(v)) { refresh(); return; }
+  const t = Math.max(0, Math.min(v, S.dur));
+  if (which === "in") { S.inT = t; if (S.outT == null || S.outT <= t) S.outT = S.dur; }
+  else { S.outT = t; if (S.inT == null || S.inT >= t) S.inT = 0; }
+  refresh();
+}
+$("btnIn").onclick = setIn;
+$("btnOut").onclick = setOut;
+$("btnCut").onclick = addCut;
+$("btnClear").onclick = () => { S.cuts = []; S.inT = S.outT = null; refresh(); };
+for (const [id, w] of [["entIn", "in"], ["entOut", "out"]]) {
+  $(id).addEventListener("change", () => entrySet(w));
+  $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { entrySet(w); e.target.blur(); } });
+}
+
+function refresh() {
+  $("entIn").value = S.inT == null ? "" : fmt(S.inT);
+  $("entOut").value = S.outT == null ? "" : fmt(S.outT);
+  const ul = $("list"); ul.innerHTML = "";
+  if (!S.cuts.length) ul.innerHTML = '<li class="empty">잘라낸 부분이 여기에 표시됩니다</li>';
+  S.cuts.forEach(([s, e], i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `✂ ${i + 1}. ${fmt(s)} → ${fmt(e)} <span style="color:#999">(${fmt(e - s)} 버림)</span>`;
+    li.style.cursor = "pointer";
+    li.onclick = () => seek(s);
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "되돌리기";
+    x.onclick = (ev) => { ev.stopPropagation(); S.cuts.splice(i, 1); refresh(); };
+    li.appendChild(x); ul.appendChild(li);
+  });
+  const k = kept().reduce((a, [s, e]) => a + e - s, 0);
+  let msg = S.dur ? `남는 길이 ${fmt(k)}  (원본 ${fmt(S.dur)})` : "";
+  if (pending()) msg += "  ·  주황색 = 버릴 부분 → [✂ 잘라내기] 또는 바로 [저장하기]";
+  else if (!S.cuts.length && S.dur) msg += "  ·  버릴 장면으로 이동해서 [① 여기부터 버리기]를 누르세요";
+  $("hint").textContent = msg;
+  drawTimeline();
+}
+
+// ---------- keyboard ----------
+document.addEventListener("keydown", (e) => {
+  if (!S.dur || e.target.tagName === "INPUT" || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key;
+  const map = {
+    ArrowLeft: () => step(e.shiftKey ? "-f" : -1), ArrowRight: () => step(e.shiftKey ? "f" : 1),
+    PageUp: () => step(-10), PageDown: () => step(10), Home: () => seek(0), End: () => seek(S.dur),
+    " ": () => $("btnPlay").click(), s: setIn, S: setIn, e: setOut, E: setOut, x: addCut, X: addCut,
+  };
+  if (map[k]) { e.preventDefault(); map[k](); }
+});
+
+// ---------- ffmpeg ----------
+async function fetchBlobURL(url, type, onPct) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} (${res.status})`);
+  const total = +res.headers.get("content-length") || 0;
+  const reader = res.body.getReader(); const chunks = []; let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    if (onPct && total) onPct(got / total);
+  }
+  return URL.createObjectURL(new Blob(chunks, { type }));
+}
+function loadFFmpeg() {
+  if (ff) return Promise.resolve(ff);
+  if (ffLoading) return ffLoading;
+  ffLoading = (async () => {
+    const f = new FFmpeg();
+    const coreURL = await fetchBlobURL(`${CORE_BASE}/ffmpeg-core.js`, "text/javascript");
+    const wasmURL = await fetchBlobURL(`${CORE_BASE}/ffmpeg-core.wasm`, "application/wasm",
+      (p) => { if (S.busy) $("status").textContent = `처리 엔진 불러오는 중... ${Math.round(p * 100)}% (처음 한 번만, 약 31MB)`; });
+    await f.load({ coreURL, wasmURL });
+    ff = f; return f;
+  })();
+  ffLoading.catch(() => { ffLoading = null; });
+  return ffLoading;
+}
+
+let curOffset = 0, curDur = 0, total = 0, logTail = [];
+function onLog({ message }) {
+  logTail.push(message); if (logTail.length > 30) logTail.shift();
+  const m = /time=\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(message);
+  if (m && total) {
+    const t = +m[1] * 3600 + +m[2] * 60 + +m[3];
+    $("prog").value = Math.min(1, (curOffset + Math.min(t, curDur)) / total) * 950;
+  }
+}
+
+async function exportVideo() {
+  if (S.busy || !S.file) return;
+  if (!allCuts().length) { alert("버릴 부분을 먼저 지정하세요.\n\n버릴 장면으로 이동 → [① 여기부터 버리기] → 저장하기"); return; }
+  const segs = kept();
+  if (!segs.length) { alert("전부 버리면 남는 영상이 없습니다."); return; }
+  const precise = document.querySelector("input[name=mode]:checked").value === "precise";
+
+  setBusy(true);
+  $("result").style.display = "none";
+  const tmp = [];
+  try {
+    $("status").textContent = "처리 엔진 준비 중...";
+    const f = await loadFFmpeg();
+    f.on("log", onLog);
+    $("status").textContent = "자르는 중...";
+
+    // 원본은 복사하지 않고 그대로 연결 (큰 파일도 메모리 절약)
+    const dir = "/in";
+    try { await f.createDir(dir); } catch {}
+    await f.mount("WORKERFS", { files: [S.file] }, dir);
+    const inp = `${dir}/${S.file.name}`;
+
+    total = segs.reduce((a, [s, e]) => a + e - s, 0); curOffset = 0;
+    for (let i = 0; i < segs.length; i++) {
+      const [s, e] = segs[i]; curDur = e - s;
+      const out = segs.length === 1 ? "out.mp4" : `part${i}.mp4`;
+      const args = ["-ss", s.toFixed(3), "-i", inp, "-t", (e - s).toFixed(3),
+        "-map", "0:v:0?", "-map", "0:a?", "-map_metadata", "0"];
+      if (precise) args.push("-c:v", "libx264", "-preset", "superfast", "-crf", "21", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k");
+      else args.push("-c", "copy", "-avoid_negative_ts", "make_zero");
+      args.push("-movflags", "+faststart", out);
+      const rc = await f.exec(args);
+      if (rc !== 0) throw new Error("ffmpeg 오류\n" + logTail.slice(-6).join("\n"));
+      tmp.push(out);
+      curOffset += curDur;
+    }
+    if (segs.length > 1) {
+      $("status").textContent = "이어 붙이는 중...";
+      await f.writeFile("list.txt", tmp.map((p) => `file '${p}'`).join("\n"));
+      tmp.push("list.txt");
+      const rc = await f.exec(["-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "-movflags", "+faststart", "out.mp4"]);
+      if (rc !== 0) throw new Error("합치기 실패\n" + logTail.slice(-6).join("\n"));
+      tmp.push("out.mp4");
+    } else if (!tmp.includes("out.mp4")) tmp.push("out.mp4");
+
+    const data = await f.readFile("out.mp4");
+    const blob = new Blob([data.buffer], { type: "video/mp4" });
+    if (S.outUrl) URL.revokeObjectURL(S.outUrl);
+    S.outUrl = URL.createObjectURL(blob);
+    const name = S.file.name.replace(/\.[^.]+$/, "") + "_cut.mp4";
+    const a = document.createElement("a");
+    a.href = S.outUrl; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+
+    $("prog").value = 1000;
+    $("status").textContent = "완료!";
+    $("result").innerHTML = `✅ 저장 완료: <b>${name}</b> (${mb(blob.size)}, 원본 ${mb(S.file.size)})<br>
+      브라우저의 <b>다운로드</b> 폴더에 저장되었습니다. 다운로드가 안 되었으면 <a href="${S.outUrl}" download="${name}">여기를 눌러 받기</a>`;
+    $("result").style.display = "block";
+  } catch (err) {
+    $("prog").value = 0;
+    if (String(err).includes("terminate")) $("status").textContent = "취소되었습니다.";
+    else {
+      $("status").textContent = "저장 실패";
+      alert("저장에 실패했습니다.\n\n" + (err.message || err) +
+        (String(err).includes("fetch") || String(err).includes("Failed") ? "\n\n인터넷 연결을 확인하세요. (처리 엔진을 받아야 합니다)" : ""));
+    }
+  } finally {
+    if (ff) {
+      ff.off("log", onLog);
+      for (const p of tmp) { try { await ff.deleteFile(p); } catch {} }
+      try { await ff.unmount("/in"); } catch {}
+    }
+    setBusy(false);
+  }
+}
+$("btnSave").onclick = exportVideo;
+$("btnCancel").onclick = () => {
+  if (ff) { ff.terminate(); ff = null; ffLoading = null; }
+};
+
+function setBusy(b) {
+  S.busy = b;
+  $("btnSave").disabled = b;
+  $("btnOpen").disabled = b;
+  $("btnCancel").hidden = !b;
+  if (b) { $("prog").value = 0; video.pause(); }
+}
+</script>
+</body>
+</html>
