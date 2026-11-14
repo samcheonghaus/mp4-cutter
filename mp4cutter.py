@@ -12,7 +12,7 @@ from tkinter import ttk, filedialog, messagebox
 import cutter_core as core
 
 APP_NAME = "MP4 Cutter"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 PREVIEW_W, PREVIEW_H = 800, 450
 TL_H = 46  # timeline height
 
@@ -21,8 +21,9 @@ PANEL = "#2b2d31"
 FG = "#e6e6e6"
 MUTED = "#9aa0a6"
 ACCENT = "#4c8dff"
-SEG = "#2fbf71"
+SEG = "#2f9e63"
 INOUT = "#ffb020"
+CUT = "#e5484d"
 
 
 class App:
@@ -48,6 +49,7 @@ class App:
         self._style()
         self._build()
         self._bind_keys()
+        self._refresh_list()
 
         try:
             self.ffmpeg = core.find_ffmpeg()
@@ -74,10 +76,13 @@ class App:
         s.configure("Panel.TLabel", background=PANEL, foreground=FG)
         s.configure("Muted.TLabel", background=BG, foreground=MUTED)
         s.configure("PMuted.TLabel", background=PANEL, foreground=MUTED)
-        s.configure("Time.TLabel", background=BG, foreground=FG, font=("Consolas", 14, "bold"))
+        s.configure("Time.TLabel", background=BG, foreground=FG, font=("Consolas", 12, "bold"))
         s.configure("TButton", background="#3a3d43", foreground=FG, borderwidth=0, padding=(10, 5))
         s.map("TButton", background=[("active", "#4a4e55"), ("disabled", "#2a2c30")],
               foreground=[("disabled", "#666")])
+        s.configure("Nav.TButton", padding=(6, 5))
+        s.configure("Cut.TButton", background=CUT, foreground="white", font=self.font_b)
+        s.map("Cut.TButton", background=[("active", "#f06b6f")])
         s.configure("Accent.TButton", background=ACCENT, foreground="white", font=self.font_b,
                     padding=(16, 8))
         s.map("Accent.TButton", background=[("active", "#6aa1ff"), ("disabled", "#2a2c30")])
@@ -117,29 +122,28 @@ class App:
         self.lbl_time.pack(side="left")
         for txt, d in (("+10초", 10), ("+1초", 1), ("+1프레임", "f"),
                        ("-1프레임", "-f"), ("-1초", -1), ("-10초", -10)):
-            ttk.Button(nav, text=txt,
-                       command=lambda d=d: self.step(d)).pack(side="right", padx=2)
+            ttk.Button(nav, text=txt, style="Nav.TButton",
+                       command=lambda d=d: self.step(d)).pack(side="right", padx=1)
 
-        # cut panel
+        # cut panel (버릴 구간 지정)
         panel = ttk.Frame(r, style="Panel.TFrame", padding=10)
 
         row1 = ttk.Frame(panel, style="Panel.TFrame")
         row1.pack(fill="x")
-        ttk.Label(row1, text="시작", style="Panel.TLabel").pack(side="left")
-        self.ent_in = ttk.Entry(row1, width=14, font=("Consolas", 11))
-        self.ent_in.pack(side="left", padx=4)
+        ttk.Label(row1, text="버릴 구간", style="Panel.TLabel", font=self.font_b,
+                  foreground=CUT).pack(side="left", padx=(0, 10))
+        ttk.Button(row1, text="① 여기부터 버리기 (S)", command=self.set_in).pack(side="left")
+        self.ent_in = ttk.Entry(row1, width=13, font=("Consolas", 11))
+        self.ent_in.pack(side="left", padx=(4, 12))
         self.ent_in.bind("<Return>", lambda e: self._entry_set("in"))
         self.ent_in.bind("<FocusOut>", lambda e: self._entry_set("in"))
-        ttk.Button(row1, text="[ 현재 위치 (I)", command=self.set_in).pack(side="left")
-
-        ttk.Label(row1, text="   끝", style="Panel.TLabel").pack(side="left")
-        self.ent_out = ttk.Entry(row1, width=14, font=("Consolas", 11))
+        ttk.Button(row1, text="② 여기까지 버리기 (E)", command=self.set_out).pack(side="left")
+        self.ent_out = ttk.Entry(row1, width=13, font=("Consolas", 11))
         self.ent_out.pack(side="left", padx=4)
         self.ent_out.bind("<Return>", lambda e: self._entry_set("out"))
         self.ent_out.bind("<FocusOut>", lambda e: self._entry_set("out"))
-        ttk.Button(row1, text="현재 위치 ] (O)", command=self.set_out).pack(side="left")
-
-        ttk.Button(row1, text="➕ 구간 추가 (A)", command=self.add_segment).pack(side="right")
+        ttk.Button(row1, text="✂ 잘라내기 (X)", style="Cut.TButton",
+                   command=self.add_segment).pack(side="right")
 
         row2 = ttk.Frame(panel, style="Panel.TFrame")
         row2.pack(fill="x", pady=(10, 0))
@@ -150,30 +154,20 @@ class App:
         self.lst.bind("<Double-Button-1>", self._jump_segment)
         btns = ttk.Frame(row2, style="Panel.TFrame")
         btns.pack(side="left", padx=(8, 0), fill="y")
-        ttk.Button(btns, text="선택 삭제", command=self.del_segment).pack(fill="x")
-        ttk.Button(btns, text="전체 삭제", command=self.clear_segments).pack(fill="x", pady=4)
+        ttk.Button(btns, text="선택 되돌리기", command=self.del_segment).pack(fill="x")
+        ttk.Button(btns, text="전체 되돌리기", command=self.clear_segments).pack(fill="x", pady=4)
 
-        ttk.Label(panel, text="※ 구간을 추가하지 않으면 위의 시작~끝 한 구간만 저장합니다. "
-                              "여러 구간을 추가하면 중간 부분을 잘라내고 이어 붙일 수 있습니다.",
-                  style="PMuted.TLabel").pack(anchor="w", pady=(6, 0))
+        self.lbl_hint = ttk.Label(panel, text="", style="PMuted.TLabel")
+        self.lbl_hint.pack(anchor="w", pady=(6, 0))
 
         # options
         opt = ttk.Frame(r, style="Panel.TFrame", padding=10)
         self.var_mode = tk.StringVar(value="copy")
         ttk.Label(opt, text="방식", style="Panel.TLabel", font=self.font_b).grid(row=0, column=0, sticky="w")
-        ttk.Radiobutton(opt, text="무손실 빠른 자르기 (화질·용량 원본 그대로, 키프레임 기준으로 잘림)",
+        ttk.Radiobutton(opt, text="빠르게 (화질·용량 원본 그대로, 자른 위치가 1초 정도 어긋날 수 있음)",
                         variable=self.var_mode, value="copy").grid(row=0, column=1, sticky="w", padx=8)
-        ttk.Radiobutton(opt, text="정확한 자르기 (프레임 단위 정확, 재인코딩이라 조금 느림)",
+        ttk.Radiobutton(opt, text="정확하게 (프레임 단위로 정확, 저장이 조금 느림)",
                         variable=self.var_mode, value="precise").grid(row=1, column=1, sticky="w", padx=8)
-        self.var_merge = tk.StringVar(value="merge")
-        ttk.Label(opt, text="여러 구간", style="Panel.TLabel", font=self.font_b).grid(
-            row=2, column=0, sticky="w", pady=(6, 0))
-        f = ttk.Frame(opt, style="Panel.TFrame")
-        f.grid(row=2, column=1, sticky="w", padx=8, pady=(6, 0))
-        ttk.Radiobutton(f, text="하나로 이어 붙이기", variable=self.var_merge,
-                        value="merge").pack(side="left")
-        ttk.Radiobutton(f, text="각각 따로 저장", variable=self.var_merge,
-                        value="split").pack(side="left", padx=16)
 
         # export
         bottom = ttk.Frame(r)
@@ -184,7 +178,7 @@ class App:
         self.prog = ttk.Progressbar(bottom, mode="determinate", maximum=1000)
         self.prog.pack(side="left", fill="x", expand=True, padx=(0, 10))
         self.lbl_status = ttk.Label(r, text="단축키: ←/→ 1초 · Shift+←/→ 1프레임 · "
-                                            "PgUp/PgDn 10초 · Home/End · I 시작 · O 끝 · A 구간추가",
+                                            "PgUp/PgDn 10초 · S 여기부터 버리기 · E 여기까지 버리기 · X 잘라내기",
                                     style="Muted.TLabel")
         # bottom-up packing so the preview (packed last) is the one that shrinks
         self.lbl_status.pack(side="bottom", anchor="w", padx=10, pady=(0, 8))
@@ -216,7 +210,8 @@ class App:
         r.bind("<Next>", k(lambda: self.step(10)))
         r.bind("<Home>", k(lambda: self.seek(0)))
         r.bind("<End>", k(lambda: self.seek(self.duration)))
-        for key, fn in (("i", self.set_in), ("o", self.set_out), ("a", self.add_segment)):
+        for key, fn in (("s", self.set_in), ("e", self.set_out), ("x", self.add_segment),
+                        ("i", self.set_in), ("o", self.set_out)):
             r.bind(f"<KeyPress-{key}>", k(fn))
             r.bind(f"<KeyPress-{key.upper()}>", k(fn))
         self.preview.bind("<Button-1>", lambda e: self.root.focus_set())
@@ -253,8 +248,8 @@ class App:
         detail += f" · {size:,.1f} MB"
         self.lbl_file.configure(text=f"{os.path.basename(path)}   ({detail})", style="TLabel")
         self.segments.clear()
+        self.in_t = self.out_t = None
         self._refresh_list()
-        self.in_t, self.out_t = 0.0, info["duration"]
         self._sync_entries()
         self.seek(0)
         self.root.title(f"{APP_NAME} - {os.path.basename(path)}")
@@ -321,7 +316,8 @@ class App:
         c.create_rectangle(10, 18, w - 10, 30, fill="#33363c", outline="")
         if not self.info:
             return
-        # tick labels
+        # 남는 부분 = 초록, 버린 부분 = 빨강, 선택 중인 버릴 구간 = 주황
+        c.create_rectangle(10, 18, w - 10, 30, fill=SEG, outline="")
         n = 8
         for i in range(n + 1):
             t = self.duration * i / n
@@ -331,26 +327,70 @@ class App:
             c.create_text(x, 41, text=core.fmt_time(t)[:8], fill="#777", font=("Consolas", 7),
                           anchor=anchor)
         for s, e in self.segments:
-            c.create_rectangle(self._x(s), 18, self._x(e), 30, fill=SEG, outline="")
-        if self.in_t is not None and self.out_t is not None and self.out_t > self.in_t:
-            c.create_rectangle(self._x(self.in_t), 15, self._x(self.out_t), 33,
-                               outline=INOUT, width=2)
+            c.create_rectangle(self._x(s), 18, self._x(e), 30, fill=CUT, outline="")
+        if self._pending():
+            x1, x2 = self._x(self.in_t), self._x(self.out_t)
+            c.create_rectangle(x1, 18, x2, 30, fill=INOUT, outline="", stipple="gray50")
+            c.create_rectangle(x1, 15, x2, 33, outline=INOUT, width=2)
         x = self._x(self.pos)
         c.create_line(x, 4, x, 36, fill=ACCENT, width=2)
         c.create_polygon(x - 6, 2, x + 6, 2, x, 10, fill=ACCENT, outline="")
 
-    # ---------------- in/out & segments ----------------
+    # ---------------- 버릴 구간 ----------------
+    def _pending(self):
+        return (self.in_t is not None and self.out_t is not None
+                and self.out_t - self.in_t >= 0.05)
+
+    def _all_cuts(self):
+        cuts = list(self.segments)
+        if self._pending():
+            cuts.append((self.in_t, self.out_t))
+        return cuts
+
+    def _kept(self):
+        """버릴 구간들을 뺀 나머지(남길 구간) 목록"""
+        cuts = sorted(self._all_cuts())
+        merged = []
+        for s, e in cuts:
+            if merged and s <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], e)
+            else:
+                merged.append([s, e])
+        kept, t = [], 0.0
+        for s, e in merged:
+            if s - t >= 0.05:
+                kept.append((t, s))
+            t = max(t, e)
+        if self.duration - t >= 0.05:
+            kept.append((t, self.duration))
+        return kept
+
     def _sync_entries(self):
         for ent, v in ((self.ent_in, self.in_t), (self.ent_out, self.out_t)):
             ent.delete(0, "end")
             if v is not None:
                 ent.insert(0, core.fmt_time(v))
+        self._update_hint()
         self._draw_timeline()
+
+    def _update_hint(self):
+        if not self.info:
+            self.lbl_hint.configure(text="")
+            return
+        kept = sum(e - s for s, e in self._kept())
+        msg = f"남는 길이 {core.fmt_time(kept)}  (원본 {core.fmt_time(self.duration)})"
+        if self._pending():
+            msg += "   ·   주황색 = 버릴 부분  →  [✂ 잘라내기] 또는 바로 [저장하기]"
+        elif not self.segments:
+            msg += "   ·   버릴 장면으로 이동해서 [① 여기부터 버리기]를 누르세요"
+        self.lbl_hint.configure(text=msg)
 
     def _entry_set(self, which):
         if not self.info:
             return
         ent = self.ent_in if which == "in" else self.ent_out
+        if not ent.get().strip():
+            return
         try:
             v = max(0.0, min(core.parse_time(ent.get()), self.duration))
         except ValueError:
@@ -358,37 +398,42 @@ class App:
             return
         if which == "in":
             self.in_t = v
+            if self.out_t is None or self.out_t <= v:
+                self.out_t = self.duration
         else:
             self.out_t = v
+            if self.in_t is None or self.in_t >= v:
+                self.in_t = 0.0
         self._sync_entries()
 
     def set_in(self):
+        """① 여기부터 버리기 (끝을 안 정하면 영상 끝까지)"""
         if self.info:
             self.in_t = self.pos
-            if self.out_t is not None and self.out_t <= self.in_t:
+            if self.out_t is None or self.out_t <= self.in_t:
                 self.out_t = self.duration
             self._sync_entries()
 
     def set_out(self):
+        """② 여기까지 버리기 (시작을 안 정하면 영상 처음부터)"""
         if self.info:
             self.out_t = self.pos
-            if self.in_t is not None and self.in_t >= self.out_t:
+            if self.in_t is None or self.in_t >= self.out_t:
                 self.in_t = 0.0
             self._sync_entries()
 
     def add_segment(self):
+        """✂ 잘라내기: 선택한 버릴 구간을 목록에 넣음"""
         if not self.info:
             return
-        self._entry_set("in")
-        self._entry_set("out")
-        if self.in_t is None or self.out_t is None or self.out_t - self.in_t < 0.05:
-            messagebox.showwarning(APP_NAME, "끝 시간이 시작 시간보다 뒤여야 합니다.")
+        if not self._pending():
+            messagebox.showinfo(APP_NAME, "먼저 [① 여기부터 버리기] 또는 [② 여기까지 버리기]로 "
+                                          "버릴 부분을 선택하세요.")
             return
         self.segments.append((self.in_t, self.out_t))
         self.segments.sort()
+        self.in_t = self.out_t = None
         self._refresh_list()
-        # next segment starts where this one ended
-        self.in_t, self.out_t = self.out_t, self.duration
         self._sync_entries()
 
     def del_segment(self):
@@ -398,7 +443,9 @@ class App:
 
     def clear_segments(self):
         self.segments.clear()
+        self.in_t = self.out_t = None
         self._refresh_list()
+        self._sync_entries()
 
     def _jump_segment(self, _):
         sel = self.lst.curselection()
@@ -407,13 +454,13 @@ class App:
 
     def _refresh_list(self):
         self.lst.delete(0, "end")
-        total = 0.0
         for i, (s, e) in enumerate(self.segments, 1):
-            total += e - s
-            self.lst.insert("end", f" {i:2d}.  {core.fmt_time(s)}  →  {core.fmt_time(e)}"
-                                   f"    ({core.fmt_time(e - s)})")
-        if self.segments:
-            self.lbl_status.configure(text=f"구간 {len(self.segments)}개 · 합계 {core.fmt_time(total)}")
+            self.lst.insert("end", f" ✂ {i:2d}.  {core.fmt_time(s)}  →  {core.fmt_time(e)}"
+                                   f"    ({core.fmt_time(e - s)} 버림)")
+        if not self.segments:
+            self.lst.insert("end", "  잘라낸 부분이 여기에 표시됩니다")
+            self.lst.itemconfig(0, foreground="#666")
+        self._update_hint()
         self._draw_timeline()
 
     # ---------------- export ----------------
@@ -422,12 +469,14 @@ class App:
             return
         self._entry_set("in")
         self._entry_set("out")
-        segs = list(self.segments)
+        if not self._all_cuts():
+            messagebox.showwarning(APP_NAME, "버릴 부분을 먼저 지정하세요.\n\n"
+                                             "버릴 장면으로 이동 → [① 여기부터 버리기] → 저장하기")
+            return
+        segs = self._kept()
         if not segs:
-            if self.in_t is None or self.out_t is None or self.out_t - self.in_t < 0.05:
-                messagebox.showwarning(APP_NAME, "저장할 구간을 지정하세요.")
-                return
-            segs = [(self.in_t, self.out_t)]
+            messagebox.showwarning(APP_NAME, "전부 버리면 남는 영상이 없습니다.")
+            return
 
         root, _ = os.path.splitext(self.path)
         n = 1
@@ -445,7 +494,6 @@ class App:
             return
 
         precise = self.var_mode.get() == "precise"
-        merge = self.var_merge.get() == "merge"
         self._set_busy(True)
 
         def progress(f):
@@ -453,7 +501,7 @@ class App:
 
         def work():
             try:
-                files = core.cut(self.ffmpeg, self.path, segs, out, precise=precise, merge=merge,
+                files = core.cut(self.ffmpeg, self.path, segs, out, precise=precise, merge=True,
                                  on_progress=progress, cancel=lambda: self._cancel)
                 self.root.after(0, lambda: self._done(files, None))
             except Exception as e:
